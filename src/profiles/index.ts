@@ -1,0 +1,1 @@
+export {superAdminProfile} from "./superAdmin";

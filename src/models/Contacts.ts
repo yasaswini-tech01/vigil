@@ -1,0 +1,41 @@
+// models/Contact.ts
+import mercury from "@mercury-js/core";
+export const Contact = mercury.createModel("Contact", {
+  ownerUserId:{
+    type:"relationship",
+    ref:"User"
+  },
+  contactUserId:{
+    type:"relationship",
+    ref:"User",
+    required:true
+  },
+  ownerContactRelationship:{
+    type:"enum",
+    enumType:"string",
+    enum:[
+        "FAMILY",
+        "CO_WORKER",
+        "FRIEND",
+        "BOSS",
+        "STRANGER",
+    ],
+    default:"STRANGER"
+  },
+  basePriorityScore:{
+    type:"number",
+    default:0
+  },
+  isPublished:{
+    type:"boolean",
+    default:false
+  },
+  isActive:{
+    type:"boolean",
+    default:true
+  },
+},
+  {
+    historyTracking:true
+  },
+);
