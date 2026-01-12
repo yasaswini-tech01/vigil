@@ -3,14 +3,25 @@ import mercury from "@mercury-js/core";
 export const User = mercury.createModel("User", {
   email: {
     type: "string",
-    unique:true
+    unique:true,
+    required:true
   },
   name: {
     type: "string",
+    required:true
   },
   phone:{
     type:"string",
-    unique:true
+    unique:true,
+    required:true
+  },
+  ismsg:{
+    type:"boolean",
+    default:false
+  },
+  isemail:{
+    type:"boolean",
+    default:false
   },
   createdAt:{
     type:"date",

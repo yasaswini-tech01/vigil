@@ -1,0 +1,1 @@
+export { getemailsandcount, getcontactsinfo } from "./emailcontact";

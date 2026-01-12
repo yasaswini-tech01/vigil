@@ -17,12 +17,8 @@ import { google } from "googleapis";
 import open from "open";
 import { typeDefs, resolvers } from "./elastic-search";
 import { setContext } from "./helpers/setContext";
-
-
 // 2. Initialize the SDK
-
 // If you want to parse the JSON back into a TS object:
-
 dotenv.config();
 // mercury.plugins([
 //   new RedisCache({
@@ -80,46 +76,6 @@ mercury.connect(DB_URL);
       httpServer.listen({ port: PORT }, resolve)
     );
     console.log(`🚀 Server ready at http://localhost:${PORT}/graphql`);
-
-// Start server
-app.listen(3000, () => {
-  console.log("Server running at http://localhost:3000");
-  console.log("Visit /auth/google to start login");
-});
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   } catch (error) {
     console.error("❌ Error starting server:", error);
     process.exit(1);
