@@ -1,3 +1,4 @@
+import 'dotenv/config'; // Moved to top
 import express from "express";
 import http from "http";
 import cors from "cors";
@@ -8,17 +9,17 @@ import mercury from "@mercury-js/core";
 import { ApolloServer } from "@apollo/server";
 import { expressMiddleware } from "@apollo/server/express4";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import * as dotenv from "dotenv";
-// import { RedisCache } from "@mercury-js/plugins/redis";
 import "./models";
 import "./profiles";
 import "./hooks";
-import { google } from "googleapis";
-import open from "open";
 import { typeDefs, resolvers } from "./elastic-search";
 import { setContext } from "./helpers/setContext";
+
+
 // 2. Initialize the SDK
+
 // If you want to parse the JSON back into a TS object:
+
 dotenv.config();
 // mercury.plugins([
 //   new RedisCache({
@@ -27,31 +28,28 @@ dotenv.config();
 //   new historyTracking.HistoryTracking({ skipModels: ["Action"] }),
 // ]);
 export const app = express();
+
+// Middleware
+app.use(cors({ origin: "*", credentials: true }));
 app.use(bodyParser.json({ limit: "200mb" }));
-app.use(bodyParser.urlencoded({ limit: "200mb", extended: true }));
-app.use(express.json({ limit: "200mb" }));
 app.use(express.urlencoded({ extended: true, limit: "200mb" }));
-const corsOptions = {
-  origin: "*",
-  credentials: true,
-  optionSuccessStatus: 200,
-};
-app.use(cors(corsOptions));
+
+// Schema Setup
 const schema = applyMiddleware(
   makeExecutableSchema({
-    typeDefs: [
-      mercury.typeDefs,
-      typeDefs,         
-    ],
-    resolvers: [
-      mercury.resolvers,
-      resolvers,    
-    ],
+    typeDefs: [mercury.typeDefs, typeDefs],
+    resolvers: [mercury.resolvers, resolvers],
   })
 );
 
-const DB_URL = process.env.DB_URL!;
+// Database Connection
+const DB_URL = process.env.DB_URL || process.env.MONGO_URL; 
+if (!DB_URL) {
+  console.error("❌ DB_URL is missing in .env file");
+  process.exit(1);
+}
 mercury.connect(DB_URL);
+
 (async function startApolloServer() {
   try {
     const httpServer = http.createServer(app);
@@ -59,23 +57,28 @@ mercury.connect(DB_URL);
       introspection: true,
       schema,
       plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
-      rootValue: () => ({
-        mercuryResolvers: mercury.resolvers,
-      }),
     });
+
     await server.start();
+
     app.use(
       "/graphql",
-      cors<cors.CorsRequest>(corsOptions),
       expressMiddleware(server, {
         context: async ({ req }) => await setContext(req),
       })
     );
+
+    // Add your Auth routes here before starting the server
+    app.get("/auth/google", (req, res) => {
+      res.send("Redirecting to Google...");
+    });
+
     const PORT = process.env.PORT || 4005;
-    await new Promise<void>((resolve) =>
-      httpServer.listen({ port: PORT }, resolve)
-    );
+    await new Promise<void>((resolve) => httpServer.listen({ port: PORT }, resolve));
+    
     console.log(`🚀 Server ready at http://localhost:${PORT}/graphql`);
+    console.log(`🔗 Auth ready at http://localhost:${PORT}/auth/google`);
+
   } catch (error) {
     console.error("❌ Error starting server:", error);
     process.exit(1);

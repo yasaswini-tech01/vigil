@@ -2,6 +2,8 @@ import { baseApis } from "./baseApi";
 import { Base } from "../connect";
 import { GraphQLError } from "graphql";
 import { google } from "googleapis";
+
+
 export const setContext = async (req: any) => {
   const base = new Base();
   const requestedApi: string = getRequestedApi(req.body.query);
@@ -29,6 +31,8 @@ export const setContext = async (req: any) => {
   };
   return context;
 };
+
 const getRequestedApi = (query: string) => {
   return query?.split("(")[0]?.trim().split(" ")[1]?.toLowerCase();
 };
+
