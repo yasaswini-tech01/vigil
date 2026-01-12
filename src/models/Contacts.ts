@@ -10,6 +10,12 @@ export const Contact = mercury.createModel("Contact", {
     ref:"User",
     required:true
   },
+  contactEmail:{
+    type:"string"
+  },
+  contactPhone:{
+    type:"string"
+  },
   ownerContactRelationship:{
     type:"enum",
     enumType:"string",
@@ -19,6 +25,10 @@ export const Contact = mercury.createModel("Contact", {
         "FRIEND",
         "BOSS",
         "STRANGER",
+        "BANKS",
+        "BUSINESS",
+        "ECOMMERCE",
+        "OTHERS"
     ],
     default:"STRANGER"
   },

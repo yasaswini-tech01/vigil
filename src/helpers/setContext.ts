@@ -13,17 +13,24 @@ export const setContext = async (req: any) => {
       extensions: { http: { status: 403 } }
     });
   }
-
-  // 🔑 Mercury NEEDS this at top level
+  let gmailOAuthClient = null;
+  if (req.session?.googleTokens){
+     const oauth2Client = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET,
+      process.env.REDIRECT_URI
+    );
+    oauth2Client.setCredentials(req.session.googleTokens);
+    gmailOAuthClient = oauth2Client;
+  }
   const context = {
     profile: headerProfile,
     user: { profile: headerProfile },
     base,
+    gmailOAuthClient
   };
-
   return context;
 };
-
 const getRequestedApi = (query: string) => {
   return query?.split("(")[0]?.trim().split(" ")[1]?.toLowerCase();
 };

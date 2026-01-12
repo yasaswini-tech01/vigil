@@ -14,7 +14,6 @@ import "./profiles";
 import "./hooks";
 import { typeDefs, resolvers } from "./elastic-search";
 import { setContext } from "./helpers/setContext";
-
 export const app = express();
 
 // Middleware
