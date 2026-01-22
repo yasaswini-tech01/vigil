@@ -25,7 +25,9 @@ const rules=[
             create:true,
             read:true,
             update:true,
-            delete:true
+            delete:true,
+            list:true,
+            count:true
         }
     },
     {

@@ -12,3 +12,10 @@ export const sendOtpSms = async (to: string, otp: string) => {
     to,
   });
 };
+export const sentMessage = async (to: string, content: string) => {
+  await client.messages.create({
+    body: content,
+    from: process.env.TWILIO_PHONE!,
+    to,
+  });
+};

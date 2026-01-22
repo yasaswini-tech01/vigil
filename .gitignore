@@ -36,3 +36,7 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Project files
+package.json
+yarn.lock
