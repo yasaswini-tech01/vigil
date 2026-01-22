@@ -1,69 +1,103 @@
 import mercury from "@mercury-js/core";
 import bcrypt from "bcryptjs";
-import { redis } from "../utils/redis";
+import { redisConnection } from "../utils/redis";
 import { sendOtpEmail } from "../utils/sendEmail";
 import { sendOtpSms } from "../utils/sendSms";
-import { ApolloCtx } from "../connect";
+import { ApolloCtx, ctxUser } from "../connect";
+import { setContext } from "../helpers/setContext.ts";
 import jwt from "jsonwebtoken";
-import { getemailsandcount, getcontactsinfo } from "../elastic-search/functions.ts"
+import { ensureContactForSender } from "../elastic-search/functions.ts"
 import { UserOAuthTokens } from "../models/UserOAuthTokens.ts";
 import { decrypt } from "dotenv";
 import mongoose from "mongoose";
-
-
+import { google } from "googleapis";
+import { GraphQLError } from "graphql";
+import dotenv from "dotenv";
+dotenv.config();
 export const resolvers = {
   Query: {
     hello: (_: any, { name }: { name: string }) =>
       `Hello ${name || "World"}`,
-    emailsAndContactsDisplay: async (
-    _: any,
-    { input }: { input: any },
-    ctx: ApolloCtx
-    ) => {
-    const { ownerUserId, isMsg, isEmail } = input;
-    const UserSchema = mercury.db.User;
-    const ownerId = new mongoose.Types.ObjectId(ownerUserId);
-    const ownerUser = await UserSchema.get(
-      { _id: ownerId },
-      { id: "1", profile: "SUPERADMIN" }
+    getGmailConsentUrl: async (_: any,{ input }: { input: { token ?:string } }, ctx: any) => {
+    if (!ctx.user?.id) {
+      throw new GraphQLError("Unauthorized");
+    }
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET,
+      process.env.REDIRECT_URI
     );
-    if (!ownerUser) {
-      throw new Error("User not registered. Please signup to continue");
-    }
-    const response: any[] = [];
-    if (isEmail === true) {
-      if (!ctx.gmailOAuthClient) {
-        throw new Error("Email consent not granted");
-      }
-      const emails = await getemailsandcount(ctx.gmailOAuthClient);
-      emails.forEach(e => {
-        response.push({
-          email: e.email,
-          messageCount: e.messageCount
-        });
-      });
-    }
-    if (isMsg === true) {
-      const contacts = await getcontactsinfo(ownerUser._id);
-      contacts.forEach(c => {
-        response.push({
-          contact: c.contact,
-          messageCount: c.messageCount
-        });
-      });
-    }
-    return response;
+    console.log(oauth2Client,"oauth2Client...");
+    let gmailOAuthClient=oauth2Client;
+    const url = oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
+      ],
+      state: ctx.user.id, // VERY IMPORTANT
+    });
+    console.log(url,"url...");
+    console.log(gmailOAuthClient,"gmailOAuthClient...");
+    return {url,gmailOAuthClient};
+    },
+    getImportantNotifications: async (
+    _: any,
+    { input }: { input?: { limit?: number; minPriority?: number } },
+    ctx: any
+    ) => {
+    try {
+      const ownerUserId = ctx.user.id;
+      const limit = input?.limit ?? 20;
+      const minPriority = input?.minPriority ?? 80;
+      const notifications = await mercury.db.Message.mongoModel.find(
+        {
+          ownerUserId,
+          channel: "EMAIL",
+          isRead: false,
+          isArchived: false,
+          isDeleted: false,
+          isActive: true,
+          priorityScore: { $gte: minPriority },
+        },
+        {
+          messageId: 1,
+          senderEmail: 1,
+          senderName: 1,
+          subject: 1,
+          sent_at: 1,
+          priorityScore: 1,
+          threadId: 1,
+          contactId: 1,
+        }
+      )
+        .sort({
+          priorityScore: -1,
+          sent_at: -1,
+        })
+        .limit(limit)
+        .lean();
+      console.log(notifications,"notifications");
+      return {
+        count: notifications.length,
+        notifications,
+      };
+    } catch (error) {
+      console.error("getImportantNotifications error:", error);
+      return {
+        count: 0,
+        notifications: [],
+      };
+  };
     }
   },
-    
-  },
-
   Mutation: {
     signUp: async (
       _: any,
       { input }: { input: any },
       ctx: ApolloCtx
-    ) => {
+      ) => {
       const { email, phone, name, password } = input;
       const authCtx = {
         id: "system",
@@ -87,6 +121,7 @@ export const resolvers = {
         authCtx
       );
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      console.log("Generated OTP:", otp);
       await redis.setex(`otp:${newUser.id}`, 300, otp);
       const normalizedEmail = email.trim().toLowerCase();
       const normalizedPhone = phone.trim();
@@ -148,7 +183,6 @@ export const resolvers = {
         message: "OTP verified successfully",
       };
     },
-
     verifyPhoneOtp: async (
       _: any,
       {
@@ -246,7 +280,6 @@ export const resolvers = {
         message: "Email verified successfully",
       };
     },
-
     signIn: async (
       _: any,
       {
@@ -256,7 +289,8 @@ export const resolvers = {
           identifier: string;
           password: string;
         };
-      }
+      },
+      ctx: any
     ) => {
       const authCtx = {
         id: "system",
@@ -288,31 +322,120 @@ export const resolvers = {
       if (!isPasswordValid) {
         throw new Error("Invalid credentials");
       }
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          profile: user.role ?? "USER",
-        },
-        process.env.JWT_SECRET!,
-        {
-          expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-        }
-      );
+      // const token = jwt.sign(
+      //   {
+      //     userId: user.id,
+      //     profile: user.role ?? "USER",
+      //   },
+      //   process.env.SECRET_TOKEN_KEY!,
+      //   {
+      //     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      //   }
+      // );
+      const token = ctx.base.Auth.createSession({
+        id:user.id,
+        name:user.name,
+        phone:user.phone,
+        email:user.email
+        });
+        console.log(token,"token....");
 
       await mercury.db.User.update(
         { _id: user.id },
         { lastLoginAt: new Date() },
         authCtx
       );
-
       return {
         message: "Sign in successful",
         userId: user.id,
         token,
       };
     },
+    creatingEmailContact: async (_: any,  { input }: { input: { senderEmail: string } }, ctx:any) => {
+    try {
+    const ownerUserId = new mongoose.Types.ObjectId(ctx.user.id);
 
+    // 1️⃣ Fetch sender stats
+    const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
+      ownerUserId,
+      senderEmail: input.senderEmail,
+    });
+    console.log(senderStats,"senderstats");
 
+    if (!senderStats) {
+      return { contactId: null };
+    }
 
-  },
+    // 2️⃣ Already linked → return
+    if (senderStats.contactId) {
+      return { contactId: senderStats.contactId };
+    }
+
+    // 3️⃣ Not enough signal yet
+    if (senderStats.emailCount < 3) {
+      return { contactId: null };
+    }
+    // 4️⃣ Create contact (idempotent)
+    const contactId = await ensureContactForSender(
+      {
+        ownerUserId: senderStats.ownerUserId.toString(),
+        senderEmail: senderStats.senderEmail,
+        relationship:"STRANGER"
+      },
+    );
+
+    // 5️⃣ Link back atomically
+    await mercury.db.SenderStats.mongoModel.updateOne(
+      { _id: senderStats._id, contactId: null },
+      { $set: { contactId } }
+    );
+    return { contactId };
+  } catch (error) {
+    console.error("creatingEmailContact error:", error);
+    return { contactId: null };
+  }
+    },
+    updatingEmailContact: async (
+      _: any,  
+      { input:{senderEmail,relationship} }: { input: { senderEmail: string,relationship:string } }, 
+      ctx:any) => {
+      try {
+         const ownerUserId=ctx.user.id
+         const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
+            ownerUserId,
+            senderEmail:senderEmail,
+          });
+          console.log(senderStats,"senderstats");
+          if (!senderStats.contactId) {
+            const contactId = await ensureContactForSender(
+              {
+                ownerUserId: senderStats.ownerUserId.toString(),
+                senderEmail: senderStats.senderEmail,
+                relationship:relationship
+              },
+            );
+            console.log(contactId,"contactId");
+          }
+          else{
+            const updated= await mercury.db.Contact.mongoModel.updateOne(
+              {
+                  primaryEmail:senderEmail,
+                  ownerUserId
+              },
+              {
+                $set: {
+                  relationship,
+                  updatedOn: new Date()
+                  }
+                }
+              );
+              console.log(updated,"updatedcontact");
+          }
+          return true
+      } catch (error) {
+        console.error("creatingEmailContact error:", error);
+        return { contactId: null };
+      }
+    },
+}
 };

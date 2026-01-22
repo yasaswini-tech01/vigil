@@ -1,1 +1,1 @@
-export { getemailsandcount, getcontactsinfo } from "./emailcontact";
+export {ensureContactForSender,getRelationshipScore,getContentUrgencyScore,calculatePriorityScore} from "./emailcontact";

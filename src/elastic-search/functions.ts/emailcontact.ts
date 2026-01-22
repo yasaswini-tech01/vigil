@@ -1,40 +1,83 @@
 import mercury from "@mercury-js/core";;
 import mongoose from "mongoose";
 import { google } from "googleapis";
-export const getemailsandcount = async (oauthClient: any) => {
-  const gmail = google.gmail({ version: "v1", auth: oauthClient });
-  const senderMap = new Map<string, number>();
-  let nextPageToken: string | undefined;
-  do {
-    const listRes = await gmail.users.messages.list({
-      userId: "me",
-      maxResults: 100,
-      pageToken: nextPageToken
+import { emailQueue } from "../../utils/queue";
+export async function ensureContactForSender({
+  ownerUserId,
+  senderEmail,
+  relationship
+}: {
+  ownerUserId: string;
+  senderEmail: string;
+  relationship:string
+}) {
+  const existingContact =
+    await mercury.db.Contact.mongoModel.findOne({
+      ownerUserId,
+      $or: [
+        { primaryEmail: senderEmail },
+        { emails: senderEmail },
+      ],
     });
-    nextPageToken = listRes.data.nextPageToken;
-    const messages = listRes.data.messages || [];
-    for (const msg of messages) {
-      const msgRes = await gmail.users.messages.get({
-        userId: "me",
-        id: msg.id,
-        format: "metadata",
-        metadataHeaders: ["From"]
-      });
-      const headers = msgRes.data.payload?.headers || [];
-      const from = headers.find(h => h.name === "From")?.value;
-      if (!from) continue;
-      senderMap.set(from, (senderMap.get(from) || 0) + 1);
-    }
-  } while (nextPageToken);
-  return Array.from(senderMap.entries()).map(([email, count]) => ({
-    email,
-    messageCount: count
-  }));
-};
-
-
-
-export const getcontactsinfo=async(ownerUserId:string)=>{
-
-
+  if (existingContact) {
+    await mercury.db.Contact.mongoModel.updateOne(
+      { _id: existingContact._id },
+       {relationship:relationship}
+    );
+    return existingContact._id;
+  }
+  const contact = await mercury.db.Contact.create({
+    ownerUserId,
+    primaryEmail: senderEmail,
+    emails: [senderEmail],
+    displayName:senderEmail,
+    createdFrom: "EMAIL",
+    relationship:relationship
+  },{id:"system",profile:"SUPER_ADMIN"});
+ return contact.id;
 }
+export const getRelationshipScore = (relationship: string): number => {
+  switch (relationship) {
+    case "FAMILY":
+      return 100;
+    case "BOSS":
+      return 90;
+    case "CO_WORKER":
+      return 70;
+    case "FRIEND":
+      return 50;
+    default:
+      return 20; // STRANGER
+  }
+};
+export const getContentUrgencyScore = (content: string): number => {
+  const text = (content || "").toLowerCase();
+ let score = 0;
+
+  const rules = [
+    { words: ["urgent", "asap", "immediately"], score: 40 },
+    { words: ["important", "priority"], score: 25 },
+    { words: ["today", "now"], score: 15 },
+    { words: ["please"], score: 5 },
+    { words: ["reminder"], score: 10 },
+    { words: ["offer", "sale"], score: -10 },
+    { words: ["advertisement", "promo"], score: -20 },
+  ];
+
+  for (const rule of rules) {
+    if (rule.words.some(word => text.includes(word))) {
+      score += rule.score;
+    }
+  }
+
+  return score;
+};
+export const calculatePriorityScore = (
+  relationship: string,
+  content: string
+): number => {
+  const relationshipScore = getRelationshipScore(relationship);
+  const contentScore = getContentUrgencyScore(content);
+
+  return relationshipScore + contentScore;
+};
