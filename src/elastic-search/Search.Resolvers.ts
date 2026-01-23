@@ -465,5 +465,201 @@ export const resolvers = {
         priorityScore,
       };
     }, 
+    topPriorityNotifications: async (
+      _: any,
+      { limit }: { limit: number },
+      ctx: ApolloCtx
+    ) => {
+      // 🔐 Must be logged in
+      if (!ctx.user?.id) {
+        throw new Error("Unauthorized");
+      }
+
+      const authCtx = {
+        id: "system",
+        profile: "SUPER_ADMIN",
+      };
+      console.log("Fetching top priority notifications for user:",);
+      console.log("User ID:", ctx.user.id);
+      // 1️⃣ Check message consent
+      const user = await mercury.db.User.get(
+        { _id: ctx.user.id },
+        authCtx
+      );
+      console.log("User details:", user);
+      //const user = users[0];
+      if (!user || !user.isMsgConsent) {
+        return [];
+      }
+      const id = user.id;
+      console.log("User has given message consent.", id);
+      // 2️⃣ Fetch candidate messages
+      // Fetch more than limit so scoring makes sense
+      const sevenDaysAgo = new Date(
+        Date.now() - 7 * 24 * 60 * 60 * 1000
+      );
+
+
+      const messages = await mercury.db.Message.list(
+        {
+          ownerUserId: id,
+          sent_at: { $gte: sevenDaysAgo }, // ✅ only last 7 days
+          isRead: false,
+          isDeleted: false,
+          isArchived: false,
+          $or: [
+            { notifiedCount: { $lt: 3 } },
+            { notifiedCount: { $exists: false } }
+          ],
+        },
+        authCtx,
+        {
+          limit: 20,
+        }
+      );
+
+      console.log("Candidate messages:", messages);
+      if (messages.length === 0) {
+        return [];
+      }
+
+      // 3️⃣ Calculate FINAL SCORE for each message
+      const scoredMessages = await Promise.all(
+        messages.map(async (m: any) => {
+          const finalScore = await calculateFinalScore({
+            basePriorityScore: m.priorityScore, // stored base score
+            sentAt: m.sent_at,
+            ownerUserId: id,
+            senderUserId: m.senderUserId,
+            authCtx,
+          });
+
+          return {
+            message: m,
+            finalScore,
+          };
+        })
+      );
+      console.log("Scored messages:", scoredMessages)
+
+      // 4️⃣ Sort by FINAL SCORE (descending)
+      scoredMessages.sort(
+        (a, b) => b.finalScore - a.finalScore
+      );
+
+      // 5️⃣ Pick top 1
+      const top = scoredMessages[0];
+
+      await mercury.db.Message.update(
+        { _id: top.message.id },
+        {
+          notifiedCount: (top.message.notifiedCount || 0) + 1,
+          lastNotifiedAt: new Date(),
+        },
+        authCtx
+      );
+
+      console.log("Top priority message selected:", top.finalScore, top.message.id);
+      return [{
+        messageId: top.message.id,
+        senderName: top.message.senderName,
+        content: top.message.subject || top.message.content,
+        basePriorityScore: top.message.priorityScore,
+        finalScore: top.finalScore,
+        sentAt: top.message.sent_at.toISOString(),
+      }];
+    },
+    creatingEmailContact: async (_: any,  { input }: { input: { senderEmail: string } }, ctx:any) => {
+    try {
+    const ownerUserId = new mongoose.Types.ObjectId(ctx.user.id);
+
+    // 1️⃣ Fetch sender stats
+    const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
+      ownerUserId,
+      senderEmail: input.senderEmail,
+    });
+    console.log(senderStats,"senderstats");
+
+    if (!senderStats) {
+      return { contactId: null };
+    }
+
+    // 2️⃣ Already linked → return
+    if (senderStats.contactId) {
+      return { contactId: senderStats.contactId };
+    }
+
+    // 3️⃣ Not enough signal yet
+    if (senderStats.emailCount < 3) {
+      return { contactId: null };
+    }
+    // 4️⃣ Create contact (idempotent)
+    const contactId = await ensureContactForSender(
+      {
+        ownerUserId: senderStats.ownerUserId.toString(),
+        senderEmail: senderStats.senderEmail,
+        relationship:"STRANGER"
+      },
+    );
+
+    // 5️⃣ Link back atomically
+    await mercury.db.SenderStats.mongoModel.updateOne(
+      { _id: senderStats._id, contactId: null },
+      { $set: { contactId } }
+    );
+    return { contactId };
+  } catch (error) {
+    console.error("creatingEmailContact error:", error);
+    return { contactId: null };
+  }
+    },
+    updatingEmailContact: async (
+      _: any,  
+      { input:{senderEmail,relationship} }: { input: { senderEmail: string,relationship:string } }, 
+      ctx:any) => {
+      try {
+         const ownerUserId=ctx.user.id
+         const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
+            ownerUserId,
+            senderEmail:senderEmail,
+          });
+          console.log(senderStats,"senderstats");
+          if (!senderStats.contactId) {
+            const contactId = await ensureContactForSender(
+              {
+                ownerUserId: senderStats.ownerUserId.toString(),
+                senderEmail: senderStats.senderEmail,
+                relationship:relationship
+              },
+            );
+            console.log(contactId,"contactId");
+          }
+          else{
+            const updated= await mercury.db.Contact.mongoModel.updateOne(
+              {
+                  primaryEmail:senderEmail,
+                  ownerUserId
+              },
+              {
+                $set: {
+                  relationship,
+                  updatedOn: new Date()
+                  }
+                }
+              );
+              console.log(updated,"updatedcontact");
+          }
+          return true
+      } catch (error) {
+        console.error("creatingEmailContact error:", error);
+        return { contactId: null };
+      }
+    },
+
+
+
+
+
+
   }
 }
