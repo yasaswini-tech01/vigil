@@ -16,6 +16,10 @@ export const Message = mercury.createModel(
     senderEmail: {
       type: "string",
     },
+    notifiedCount: {
+      type: "number",
+      default: 0
+    },
     senderName: {
       type: "string",
     },
@@ -39,6 +43,10 @@ export const Message = mercury.createModel(
     },
     subject: {
       type: "string",
+    },
+    content: {
+      type: "string",
+      required: true
     },
     messageType: {
       type: "enum",

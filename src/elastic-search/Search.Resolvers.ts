@@ -14,6 +14,11 @@ import { google } from "googleapis";
 import { GraphQLError } from "graphql";
 import dotenv from "dotenv";
 dotenv.config();
+import { calculateFinalScore } from "../functions/finalScore";
+import {
+  calculatePriorityScore,
+} from "../functions";
+
 export const resolvers = {
   Query: {
     hello: (_: any, { name }: { name: string }) =>
@@ -99,113 +104,74 @@ export const resolvers = {
       ctx: ApolloCtx
       ) => {
       const { email, phone, name, password } = input;
+
       const authCtx = {
         id: "system",
         profile: "SUPER_ADMIN",
       };
-      const existingUser = await mercury.db.User.get(
-        { $or: [{ email }, { phone }] },
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPhone = phone.trim();
+
+      const existingUsers = await mercury.db.User.list(
+        {
+          $or: [
+            { email: normalizedEmail },
+            { phone: normalizedPhone },
+          ],
+        },
         authCtx
       );
 
-      if (existingUser) {
-        throw new Error("User with this email or phone already exists");
+      if (existingUsers.length > 0) {
+        throw new Error("User already exists");
       }
+
       const newUser = await mercury.db.User.create(
         {
-          email,
-          phone,
+          email: normalizedEmail,
+          phone: normalizedPhone,
           name,
           password,
         },
         authCtx
       );
+
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      console.log("Generated OTP:", otp);
-      await redis.setex(`otp:${newUser.id}`, 300, otp);
-      const normalizedEmail = email.trim().toLowerCase();
-      const normalizedPhone = phone.trim();
       await redis.setex(`otp:email:${normalizedEmail}`, 300, otp);
       await redis.setex(`otp:phone:${normalizedPhone}`, 300, otp);
+
       try {
         await Promise.all([
-          sendOtpEmail(email, otp),
-          sendOtpSms(phone, otp)
+          sendOtpEmail(normalizedEmail, otp),
+          sendOtpSms(normalizedPhone, otp),
         ]);
-      } catch (error) {
-        console.error("Notification failed:", error);
+      } catch (err) {
+        console.error("OTP notification failed", err);
       }
 
       return {
-        message: "User registered successfully. Please verify your email and phone using the OTP sent.",
-        userId: newUser.id
-      };
-    },
-    verifyOtp: async (
-      _: any,
-      {
-        input: { userId, otp },
-      }: {
-        input: {
-          userId: string;
-          otp: string;
-        };
-      },
-      ctx: ApolloCtx
-    ) => {
-      const authCtx = {
-        id: "system",
-        profile: "SUPER_ADMIN",
-      };
-
-      const storedOtp = await redis.get(`otp:${userId}`);
-
-      if (!storedOtp) {
-        throw new Error("OTP expired or not found");
-      }
-
-      if (storedOtp !== otp) {
-        throw new Error("Invalid OTP");
-      }
-
-      await mercury.db.User.update(
-        { _id: userId },
-        {
-          isEmailVerified: true,
-          isPhoneVerified: true,
-        },
-        authCtx
-      );
-
-      await redis.del(`otp:${userId}`);
-
-      return {
-        message: "OTP verified successfully",
+        message:
+          "User registered successfully. Please verify email and phone.",
+        userId: newUser.id,
       };
     },
     verifyPhoneOtp: async (
       _: any,
-      {
-        input: { phone, otp },
-      }: {
-        input: {
-          phone: string;
-          otp: string;
-        };
-      }
+      { input }: { input: { phone: string; otp: string } }
     ) => {
       const authCtx = {
         id: "system",
         profile: "SUPER_ADMIN",
       };
-
+      const phone = input.phone.trim();
       const storedOtp = await redis.get(`otp:phone:${phone}`);
 
       if (!storedOtp) {
         throw new Error("Phone OTP expired or not found");
       }
 
-      if (storedOtp !== otp) {
+      if (storedOtp !== input.otp) {
         throw new Error("Invalid Phone OTP");
       }
 
@@ -226,37 +192,26 @@ export const resolvers = {
 
       await redis.del(`otp:phone:${phone}`);
 
-      return {
-        message: "Phone number verified successfully",
-      };
+      return { message: "Phone verified successfully" };
     },
     verifyEmailOtp: async (
       _: any,
-      {
-        input: { email, otp },
-      }: {
-        input: {
-          email: string;
-          otp: string;
-        };
-      }
+      { input }: { input: { email: string; otp: string } }
     ) => {
       const authCtx = {
         id: "system",
         profile: "SUPER_ADMIN",
       };
-      const normalizedEmail = email.trim().toLowerCase();
-      const storedOtp = await redis.get(`otp:email:${normalizedEmail}`);
-
+      const email = input.email.trim().toLowerCase();
+      const storedOtp = await redis.get(`otp:email:${email}`);
 
       if (!storedOtp) {
         throw new Error("Email OTP expired or not found");
       }
 
-      if (storedOtp !== otp) {
+      if (storedOtp !== input.otp) {
         throw new Error("Invalid Email OTP");
       }
-
 
       const users = await mercury.db.User.list(
         { email },
@@ -273,29 +228,21 @@ export const resolvers = {
         authCtx
       );
 
-
       await redis.del(`otp:email:${email}`);
 
-      return {
-        message: "Email verified successfully",
-      };
+      return { message: "Email verified successfully" };
     },
     signIn: async (
       _: any,
-      {
-        input: { identifier, password },
-      }: {
-        input: {
-          identifier: string;
-          password: string;
-        };
-      },
-      ctx: any
+      { input }: { input: { identifier: string; password: string } },
+      ctx: any // Ensure ctx is available here
     ) => {
       const authCtx = {
         id: "system",
         profile: "SUPER_ADMIN",
       };
+
+      const identifier = input.identifier.trim().toLowerCase();
 
       const users = await mercury.db.User.list(
         {
@@ -314,31 +261,23 @@ export const resolvers = {
         throw new Error("Please verify email and phone");
       }
 
-      const isPasswordValid = await bcrypt.compare(
-        password,
-        user.password
-      );
+      const isValid = await bcrypt.compare(input.password, user.password);
 
-      if (!isPasswordValid) {
+      if (!isValid) {
         throw new Error("Invalid credentials");
       }
-      // const token = jwt.sign(
-      //   {
-      //     userId: user.id,
-      //     profile: user.role ?? "USER",
-      //   },
-      //   process.env.SECRET_TOKEN_KEY!,
-      //   {
-      //     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-      //   }
-      // );
+      console.log(user);
+      // --- CHANGED SECTION START ---
+      // Using Mercury's built-in session management
       const token = ctx.base.Auth.createSession({
-        id:user.id,
-        name:user.name,
-        phone:user.phone,
-        email:user.email
-        });
-        console.log(token,"token....");
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+      });
+
+      console.log(token, "token....");
+      // --- CHANGED SECTION END ---
 
       await mercury.db.User.update(
         { _id: user.id },
@@ -348,94 +287,183 @@ export const resolvers = {
       return {
         message: "Sign in successful",
         userId: user.id,
-        token,
+        token, // Returning the session token generated by Mercury
       };
     },
-    creatingEmailContact: async (_: any,  { input }: { input: { senderEmail: string } }, ctx:any) => {
-    try {
-    const ownerUserId = new mongoose.Types.ObjectId(ctx.user.id);
-
-    // 1️⃣ Fetch sender stats
-    const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
-      ownerUserId,
-      senderEmail: input.senderEmail,
-    });
-    console.log(senderStats,"senderstats");
-
-    if (!senderStats) {
-      return { contactId: null };
-    }
-
-    // 2️⃣ Already linked → return
-    if (senderStats.contactId) {
-      return { contactId: senderStats.contactId };
-    }
-
-    // 3️⃣ Not enough signal yet
-    if (senderStats.emailCount < 3) {
-      return { contactId: null };
-    }
-    // 4️⃣ Create contact (idempotent)
-    const contactId = await ensureContactForSender(
+    creatingContact: async (
+      _: any,
       {
-        ownerUserId: senderStats.ownerUserId.toString(),
-        senderEmail: senderStats.senderEmail,
-        relationship:"STRANGER"
+        input: { contactUserId, relationship },
+      }: {
+        input: {
+          contactUserId: string;
+          relationship?: string;
+        };
       },
-    );
-
-    // 5️⃣ Link back atomically
-    await mercury.db.SenderStats.mongoModel.updateOne(
-      { _id: senderStats._id, contactId: null },
-      { $set: { contactId } }
-    );
-    return { contactId };
-  } catch (error) {
-    console.error("creatingEmailContact error:", error);
-    return { contactId: null };
-  }
-    },
-    updatingEmailContact: async (
-      _: any,  
-      { input:{senderEmail,relationship} }: { input: { senderEmail: string,relationship:string } }, 
-      ctx:any) => {
-      try {
-         const ownerUserId=ctx.user.id
-         const senderStats = await mercury.db.SenderStats.mongoModel.findOne({
-            ownerUserId,
-            senderEmail:senderEmail,
-          });
-          console.log(senderStats,"senderstats");
-          if (!senderStats.contactId) {
-            const contactId = await ensureContactForSender(
-              {
-                ownerUserId: senderStats.ownerUserId.toString(),
-                senderEmail: senderStats.senderEmail,
-                relationship:relationship
-              },
-            );
-            console.log(contactId,"contactId");
-          }
-          else{
-            const updated= await mercury.db.Contact.mongoModel.updateOne(
-              {
-                  primaryEmail:senderEmail,
-                  ownerUserId
-              },
-              {
-                $set: {
-                  relationship,
-                  updatedOn: new Date()
-                  }
-                }
-              );
-              console.log(updated,"updatedcontact");
-          }
-          return true
-      } catch (error) {
-        console.error("creatingEmailContact error:", error);
-        return { contactId: null };
+      ctx: any
+    ) => {
+      console.log("Creating contacttt:", ctx);
+      if (!ctx.user?.id) {
+        throw new Error("Unauthorized");
       }
+      const authCtx = { id: "system", profile: "SUPER_ADMIN" };
+      const users = await mercury.db.User.list(
+        { _id: contactUserId },
+        authCtx
+      );
+
+      if (users.length === 0) {
+        throw new Error("Contact user not found");
+      }
+      const contactUser = users[0];
+      if (contactUser.id === ctx.user.id) {
+        throw new Error("You cannot add yourself as a contact");
+      }
+      const existing = await mercury.db.Contact.list(
+        {
+          ownerUserId: ctx.user.id,
+          contactUserId,
+        },
+        authCtx
+      );
+
+      if (existing.length > 0) {
+        throw new Error("Contact already exists");
+      }
+      const contact = await mercury.db.Contact.create(
+        {
+          ownerUserId: ctx.user.id,
+          contactUserId,
+          email: contactUser.email,
+          phone: contactUser.phone,
+          ownerContactRelationship: relationship,
+          isActive: true,
+        },
+        authCtx
+      );
+
+      return {
+        id: contact.id,
+        email: contact.email,
+        phone: contact.phone,
+        relationship: contact.ownerContactRelationship,
+      };
     },
+    updateMsgConsent: async (
+      _: any,
+      { input: { consent } }: { input: { consent: boolean } },
+      ctx: ApolloCtx
+    ) => {
+      // 🔐 Must be logged in
+      if (!ctx.user?.id) {
+        throw new Error("Unauthorized");
+      }
+
+      const authCtx = { id: "system", profile: "SUPER_ADMIN" };
+
+      // ✅ Update consent
+      await mercury.db.User.update(
+        { _id: ctx.user.id },
+        {
+          isMsgConsent: consent,
+        },
+        authCtx
+      );
+
+      return {
+        message: consent
+          ? "Message consent granted"
+          : "Message consent revoked",
+        isMsgConsent: consent,
+      };
+    },
+    sendMessage: async (
+      _: any,
+      { input }: { input: any },
+      ctx: ApolloCtx
+    ) => {
+      // 1️⃣ Auth check
+      if (!ctx.user?.id) {
+        throw new Error("Unauthorized");
+      }
+
+      // 2️⃣ System context for DB ops
+      const authCtx = {
+        id: "system",
+        profile: "SUPER_ADMIN",
+      };
+
+      const receiverUserId = input.contactId; // rename mentally as receiverUserId
+
+      // 3️⃣ ✅ Validate receiver user exists
+      const receiver = await mercury.db.User.get(
+        { _id: receiverUserId },
+        authCtx
+      );
+      const phone = receiver?.phone.trim();
+
+
+
+
+
+      if (!receiver) {
+        throw new Error("Receiver user does not exist");
+      }
+
+      // 4️⃣ ✅ Find contact scoped to sender
+      const contacts = await mercury.db.Contact.list(
+        {
+          ownerUserId: ctx.user.id,
+          contactUserId: receiverUserId,
+        },
+        authCtx
+      );
+
+      let contact;
+
+      // 5️⃣ Create contact if not found
+      if (contacts.length === 0) {
+        contact = await mercury.db.Contact.create(
+          {
+            ownerUserId: ctx.user.id,        // sender
+            contactUserId: receiverUserId,   // receiver
+            ownerContactRelationship: "STRANGER",
+          },
+          authCtx
+        );
+      } else {
+        contact = contacts[0];
+      }
+
+      // 6️⃣ Calculate priority
+      const priorityScore = calculatePriorityScore(
+        contact.ownerContactRelationship,
+        input.content
+      );
+
+      // 7️⃣ Create message (owned by receiver)
+      const message = await mercury.db.Message.create(
+        {
+          ownerUserId: receiverUserId, // inbox owner (receiver)
+          senderUserId: ctx.user.id,
+          senderName: ctx.user.name,
+          senderPhone: ctx.user.phone,
+          contactId: contact.id,
+          channel: input.channel,
+          subject: input.subject,
+          content: input.content,
+          priorityScore,
+          isPublished: true,
+        },
+        authCtx
+      );
+      sentMessage(phone, input.content);
+
+      // 8️⃣ Return minimal response
+      return {
+        id: message.id,
+        priorityScore,
+      };
+    }, 
+  }
 }
-};

@@ -22,7 +22,19 @@ export const typeDefs = `
   signIn(input: SignInInput!): SignInResponse!
   creatingEmailContact(input:ContactInput!):ContactInResponse!
   updatingEmailContact(input:UpdateContact!):UpdateContactResponse!
+  creatingContact(input: CreateContactInput!): CreateContactResponse!
+  updateMsgConsent(input: UpdateMsgConsentInput!): UpdateMsgConsentResponse!
+  sendMessage(input: SendMessageInput!): SendMessageResponse!
+  topPriorityNotifications(limit: Int = 3): [PriorityNotification!]!
   }
+    type PriorityNotification {
+  messageId: ID!
+  senderName: String
+  content: String!
+  basePriorityScore: Int!
+  finalScore: Int!
+  sentAt: String!
+}
   input SignUpInput {
   email: String!
   phone: String!
@@ -109,5 +121,36 @@ input VerifyEmailOtpInput {
 
 type VerifyOtpResponse {
   message: String!
+}
+  input CreateContactInput {
+  contactUserId: ID!
+  relationship: String
+}
+
+type CreateContactResponse {
+  id: ID!
+  email: String
+  phone: String
+  relationship: String
+}
+  input UpdateMsgConsentInput {
+  consent: Boolean!
+}
+
+type UpdateMsgConsentResponse {
+  message: String!
+  isMsgConsent: Boolean!
+}
+  input SendMessageInput {
+  contactId: ID!
+  channel: String!
+  subject: String
+  messageType: String
+  content: String!
+}
+
+type SendMessageResponse {
+  id: ID!
+  priorityScore: Int!
 }
 `;
