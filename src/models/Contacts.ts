@@ -1,51 +1,145 @@
 // models/Contact.ts
 import mercury from "@mercury-js/core";
 export const Contact = mercury.createModel("Contact", {
-  ownerUserId:{
-    type:"relationship",
-    ref:"User"
+  ownerUserId: {
+    type: "relationship",
+    ref: "User",
   },
-  contactUserId:{
-    type:"relationship",
-    ref:"User",
-    required:true
+  contactUserId: {
+    type: "relationship",
+    ref: "User",
+    required: false,
   },
-  contactEmail:{
-    type:"string"
+  primaryEmail: {
+    type: "string",
+    required: true,
   },
-  contactPhone:{
-    type:"string"
+  emails: {
+    type: "string",
+    many:true
   },
-  ownerContactRelationship:{
-    type:"enum",
-    enumType:"string",
-    enum:[
-        "FAMILY",
-        "CO_WORKER",
-        "FRIEND",
-        "BOSS",
-        "STRANGER",
-        "BANKS",
-        "BUSINESS",
-        "ECOMMERCE",
-        "OTHERS"
+  displayName: {
+    type: "string",
+  },
+  createdFrom: {
+  type: "enum",
+  enumType: "string",
+  enum: ["MANUAL", "EMAIL", "IMPORT"],
+  default: "EMAIL",
+  },
+  isBlocked: {
+  type: "boolean",
+  default: false,
+  },
+  relationship: {
+    type: "enum",
+    enumType: "string",
+    enum: [
+      "FAMILY",
+      "CO_WORKER",
+      "FRIEND",
+      "BOSS",
+      "BUSINESS",
+      "BANKS",
+      "ECOMMERCE",
+      "STRANGER",
     ],
-    default:"STRANGER"
+    default: "STRANGER",
   },
-  basePriorityScore:{
-    type:"number",
-    default:0
+  firstInteractedAt: {
+    type: "date",
   },
-  isPublished:{
-    type:"boolean",
-    default:false
+  lastInteractedAt: {
+    type: "date",
   },
-  isActive:{
-    type:"boolean",
-    default:true
+  senderStatsId: {
+    type: "relationship",
+    ref: "SenderStats",
+    required: false,
   },
-},
-  {
-    historyTracking:true
+  basePriorityScore: {
+    type: "number",
+    default: 20,
   },
-);
+  isActive: {
+    type: "boolean",
+    default: true,
+  },
+}, {
+  historyTracking: true,
+  indexes: [
+      {
+        fields: {
+          ownerUserId: 1,
+          primaryEmail:1
+        },
+        options: {
+          unique: true,
+        },
+      },
+      {
+        fields: {
+          ownerUserId: 1,
+          emails:1
+        }
+      },
+    ]
+});
+// export const Contact = mercury.createModel("Contact", {
+//   ownerUserId:{
+//     type:"relationship",
+//     ref:"User"
+//   },
+//   contactUserId:{
+//     type:"relationship",
+//     ref:"User",
+//     required:false
+//   },
+//   contactEmail:{
+//     type:"string"
+//   },
+//   contactPhone:{
+//     type:"string"
+//   },
+//   ownerContactRelationship:{
+//     type:"enum",
+//     enumType:"string",
+//     enum:[
+//         "FAMILY",
+//         "CO_WORKER",
+//         "FRIEND",
+//         "BOSS",
+//         "STRANGER",
+//         "BANKS",
+//         "BUSINESS",
+//         "ECOMMERCE",
+//         "OTHERS"
+//     ],
+//     default:"STRANGER"
+//   },
+//   contactType:{
+//     type:"enum",
+//     enumType:"string",
+//     enum:[
+//       "EMAIL",
+//       "SMS",
+//       "MESSAGE"
+//     ]
+//   },
+//   basePriorityScore:{
+//     type:"number",
+//     default:0
+//   },
+//   isPublished:{
+//     type:"boolean",
+//     default:false
+//   },
+//   isActive:{
+//     type:"boolean",
+//     default:true
+//   },
+// },
+//   {
+//     historyTracking:true
+//   },
+// );

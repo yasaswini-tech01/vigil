@@ -1,35 +1,55 @@
 import mercury from "@mercury-js/core";
-export const UserOAuthTokens = mercury.createModel("UserOAuthTokens", {
+
+export const UserOAuthTokens = mercury.createModel(
+  "UserOAuthTokens",
+  {
     ownerUserId: {
-        type:"relationship",
-        ref:"User"
+      type: "relationship",
+      ref: "User",
+      required: true
     },
-    provider:{
-        type:"string"
+
+    provider: {
+      type: "string",
+      required: true,
+      default: "google"
     },
-    scope:{
-        type:"string"
+
+    scope: {
+      type: "string" 
     },
-    tokenType:{
-        type:"string"
+
+    tokenType: {
+      type: "string"
     },
-    accessToken:{
-        type:"string",
-        required:true
+    accessToken: {
+      type: "string"
     },
-    refreshToken:{
-        type:"string"
+    refreshToken: {
+      type: "string",
+      required: true
     },
-    expiryDate:{
-        type:"date"
+
+    expiryDate: {
+      type: "date"
     },
-},
-{
-    timeStamps:true,
-    historyTracking:true,
+
+    connectedAt: {
+      type: "date",
+      default: () => new Date()
+    },
+    revokedAt: {
+      type: "date"
+    }
+  },
+  {
+    timeStamps: true,
+    historyTracking: true,
     indexes: [
-    {
+      {
         fields: { provider: 1, ownerUserId: 1 },
         options: { unique: true }
-    }
-]},);
+      }
+    ]
+  }
+);

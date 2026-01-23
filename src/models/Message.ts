@@ -6,35 +6,39 @@ export const Message = mercury.createModel(
     ownerUserId: {
       type: "relationship",
       ref: "User",
-      required: true
+      required: true,
     },
-
     senderUserId: {
       type: "relationship",
-      ref: "User"
+      ref: "User",
+      required: false,
     },
-
-    senderPhone: {
-      type: "string"
+    senderEmail: {
+      type: "string",
     },
-
     senderName: {
-      type: "string"
+      type: "string",
     },
-
+    senderPhone: {
+      type: "string",
+    },
     contactId: {
       type: "relationship",
-      ref: "Contact"
+      ref: "Contact",
     },
-
+    messageId: {
+      type: "string",
+    },
+    threadId: {
+      type: "string"
+    },
     channel: {
       type: "enum",
       enumType: "string",
-      enum: ["SMS", "EMAIL", "MESSENGER"],
-      required: true
+      enum: ["EMAIL", "SMS", "MESSENGER"]
     },
     subject: {
-      type: "string"
+      type: "string",
     },
     messageType: {
       type: "enum",
@@ -45,85 +49,97 @@ export const Message = mercury.createModel(
         "PROMOTIONAL",
         "TRANSACTIONAL",
         "SYSTEM",
-        "OTHERS"
-      ]
+        "OTHER",
+      ],
+      default: "OTHER",
+    },
+    hasAttachments: {
+      type: "boolean",
+      default: false,
+    },
+    labels: {
+      type: "string",
+      many: true,
     },
     priorityScore: {
       type: "number",
-      default: 0
+      default: 0,
     },
-
     isRead: {
       type: "boolean",
-      default: false
+      default: false,
     },
-
     isArchived: {
       type: "boolean",
-      default: false
+      default: false,
     },
-
     isDeleted: {
       type: "boolean",
-      default: false
+      default: false,
     },
-
     sent_at: {
       type: "date",
-      default: () => new Date()
+      required: true,
     },
-
-    createdAt: {
-      type: "date",
-      default: () => new Date()
-    },
-
-    updatedAt: {
-      type: "date",
-      default: () => new Date()
-    },
-
     isPublished: {
       type: "boolean",
-      default: false
+      default: false,
     },
 
     isActive: {
       type: "boolean",
-      default: true
-    }
+      default: true,
+    },
   },
   {
     historyTracking: true,
+
     indexes: [
       {
         fields: {
           ownerUserId: 1,
           channel: 1,
-          senderName: 1,
-          sent_at: -1
-        }
+          messageId: 1,
+        },
+        options: {
+          unique: true,
+          sparse: true, 
+        },
+      },
+      {
+        fields: {
+          ownerUserId: 1,
+          channel: 1,
+          sent_at: -1,
+        },
       },
       {
         fields: {
           ownerUserId: 1,
           contactId: 1,
-          sent_at: -1
-        }
+          sent_at: -1,
+        },
       },
       {
         fields: {
           ownerUserId: 1,
-          isRead: 1
-        }
+          isRead: 1,
+        },
       },
       {
         fields: {
           ownerUserId: 1,
           priorityScore: -1,
-          sent_at: -1
-        }
-      }
-    ]
+          sent_at: -1,
+        },
+      },
+      {
+        fields: {
+          ownerUserId: 1,
+          threadId: 1,
+          sent_at: -1,
+        },
+      },
+    ],
   }
 );

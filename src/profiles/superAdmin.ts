@@ -1,4 +1,3 @@
-
 import mercury from "@mercury-js/core";
 const rules=[
     {
