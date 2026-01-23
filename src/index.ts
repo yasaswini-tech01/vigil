@@ -9,15 +9,15 @@ import { ApolloServer } from "@apollo/server";
 import { expressMiddleware } from "@apollo/server/express4";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
 import * as dotenv from "dotenv";
+import { initSocket } from "./socket/socket";
+import { google } from "googleapis";
+import { typeDefs, resolvers } from "./elastic-search";
+import { setContext } from "./helpers/setContext";
+import { emailQueue, messageWorker } from "./utils/queue";
 import "./models";
 import "./profiles";
 import "./hooks";
 import "./utils";
-import { google } from "googleapis";
-import { typeDefs, resolvers } from "./elastic-search";
-import { setContext } from "./helpers/setContext";
-import dotenv from "dotenv";
-import { emailQueue, messageWorker } from "./utils/queue";
 const app = express();
 app.use(bodyParser.json({ limit: "200mb" }));
 app.use(bodyParser.urlencoded({ limit: "200mb", extended: true }));
@@ -29,13 +29,6 @@ console.log("📢 Initializing message worker...");
 if (messageWorker) {
   console.log("✅ Worker instance is ready");
 }
-
-
-export const app = express();
-
-import { initSocket } from "./socket/socket";
-
-
 dotenv.config();
 
 

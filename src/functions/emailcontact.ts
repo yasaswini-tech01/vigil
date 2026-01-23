@@ -1,7 +1,7 @@
 import mercury from "@mercury-js/core";;
 import mongoose from "mongoose";
 import { google } from "googleapis";
-import { emailQueue } from "../../utils/queue";
+import { emailQueue } from "../utils/queue";
 export async function ensureContactForSender({
   ownerUserId,
   senderEmail,
